@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Secret Text Share</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1 style="text-align:center;margin-bottom:0.2em;">Secret Text Share</h1>
+  <div style="text-align:center;color:#666;margin-bottom:1.5em;font-size:1.05em;">
+    Securely share text with a link. Optionally protect it with a password.
+  </div>
+  <div id="main">
+    <h2>Save your secret text</h2>
+    <label for="text">Your Text:</label>
+    <textarea id="text" rows="4" placeholder="Type your secret here..." autofocus></textarea>
+    <div id="pwOpt">
+      <input type="checkbox" id="usePassword" checked />
+      <label for="usePassword">Require password to view</label>
+    </div>
+    <div id="pwField" style="position:relative;">
+      <label for="password">Password:</label>
+      <input id="password" type="password" placeholder="Choose a password" autocomplete="new-password" />
+      <button type="button" id="togglePw" style="position:absolute;right:0.5em;top:2.2em;padding:0 0.5em;">Show</button>
+    </div>
+    <button id="generate" style="margin-top:0.5em;">Create Secret Link</button>
+    <div id="linkBox" class="hidden" style="margin-top:1.5em;"></div>
+    <div id="infoMsg" class="hidden"></div>
+  </div>
+  <div id="unlock" class="hidden">
+    <h2>Unlock your secret</h2>
+    <div id="pwUnlockField" style="position:relative;">
+      <label for="unlockPassword">Password:</label>
+      <input id="unlockPassword" type="password" placeholder="Enter password" autocomplete="current-password" />
+      <button type="button" id="toggleUnlockPw" style="position:absolute;right:0.5em;top:2.2em;padding:0 0.5em;">Show</button>
+    </div>
+    <button id="unlockBtn" style="margin-top:0.5em;">Show Secret</button>
+    <button id="backBtn" type="button" style="margin-top:0.5em;margin-left:0.5em;">Back</button>
+    <div id="unlockMsg"></div>
+    <div id="unlockInfo" style="color:#888; font-size:0.95em; margin-top:0.5em;"></div>
+    <div id="revealedText" style="white-space: pre-wrap; margin-top:1em;"></div>
+  </div>
+  <div style="display:none">
+    <table>
+      <tr><td>junk1</td><td>junk2</td></tr>
+      <tr><td>junk3</td><td>junk4</td></tr>
+    </table>
+    <span id="unusedSpan">This is unused junk span</span>
+  </div>
+  <script src="main.js"></script>
+</body>
+</html>
