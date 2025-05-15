@@ -1,0 +1,50 @@
+# To enable robots, uncomment the Allow lines and comment the Disallow lines.
+# To disable robots, uncomment the Disallow lines and comment the Allow lines.
+
+# Allow all major search engines (enable indexing)
+User-agent: Googlebot
+Allow: /
+User-agent: Bingbot
+Allow: /
+User-agent: Slurp
+Allow: /
+User-agent: DuckDuckBot
+Allow: /
+User-agent: Baiduspider
+Allow: /
+User-agent: YandexBot
+Allow: /
+User-agent: Sogou
+Allow: /
+User-agent: Exabot
+Allow: /
+User-agent: facebot
+Allow: /
+User-agent: ia_archiver
+Allow: /
+User-agent: *
+Allow: /
+
+# Disallow all robots (disable indexing)
+User-agent: Googlebot
+Disallow: /
+User-agent: Bingbot
+Disallow: /
+User-agent: Slurp
+Disallow: /
+User-agent: DuckDuckBot
+Disallow: /
+User-agent: Baiduspider
+Disallow: /
+User-agent: YandexBot
+Disallow: /
+User-agent: Sogou
+Disallow: /
+User-agent: Exabot
+Disallow: /
+User-agent: facebot
+Disallow: /
+User-agent: ia_archiver
+Disallow: /
+User-agent: *
+Disallow: /

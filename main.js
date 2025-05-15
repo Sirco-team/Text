@@ -67,11 +67,12 @@ function i9() {
   document.getElementById('unlock').classList.add('hidden');
   document.getElementById('linkBox').classList.add('hidden');
   document.getElementById('infoMsg').classList.add('hidden');
-  document.getElementById('text').value = '';
+  // document.getElementById('text').value = '';
+  quill.setContents([{ insert: '\n' }]);
   document.getElementById('password').value = '';
   document.getElementById('usePassword').checked = true;
   document.getElementById('pwField').style.display = '';
-  setTimeout(() => { document.getElementById('text').focus(); }, 100);
+  setTimeout(() => { quill.focus(); }, 100);
 }
 
 function j0(q) {
@@ -94,153 +95,201 @@ function l2(i) {
   return { requirePw: m[1] === "1", encrypted: m[2] };
 }
 
-document.getElementById('usePassword').onchange = function() {
-  document.getElementById('pwField').style.display = this.checked ? '' : 'none';
-};
+document.addEventListener('DOMContentLoaded', function() {
+  // Quill toolbar options (all features)
+  const quillModules = {
+    toolbar: '#toolbar',
+    clipboard: { matchVisual: false }
+  };
 
-document.getElementById('togglePw').onclick = function() {
-  const pwInput = document.getElementById('password');
-  if (pwInput.type === "password") {
-    pwInput.type = "text";
-    this.textContent = "Hide";
-  } else {
-    pwInput.type = "password";
-    this.textContent = "Show";
-  }
-  pwInput.focus();
-};
+  // Initialize Quill editor for main page with all features
+  const quill = new Quill('#editor', {
+    modules: quillModules,
+    theme: 'snow'
+  });
 
-document.getElementById('toggleUnlockPw').onclick = function() {
-  const pwInput = document.getElementById('unlockPassword');
-  if (pwInput.type === "password") {
-    pwInput.type = "text";
-    this.textContent = "Hide";
-  } else {
-    pwInput.type = "password";
-    this.textContent = "Show";
-  }
-  pwInput.focus();
-};
-
-const params = new URLSearchParams(window.location.search);
-const id = params.get('id');
-const isNoPwPage = window.location.pathname.endsWith('/t/index.html');
-
-if (id) {
-  const { requirePw, encrypted } = l2(id);
-
-  // If on /t/index.html and a password is required, block access
-  if (isNoPwPage && requirePw) {
-    document.body.innerHTML = '<div style="margin:2em auto;max-width:400px;text-align:center;font-size:1.2em;color:#c00;">This link requires a password. Please use the main page.</div>';
-    return;
+  // Initialize Quill editor for revealed text (read-only)
+  let revealedQuill = null;
+  if (document.getElementById('revealedEditor')) {
+    revealedQuill = new Quill('#revealedEditor', {
+      readOnly: true,
+      theme: 'snow',
+      modules: { toolbar: false }
+    });
+    document.getElementById('revealedEditor').style.pointerEvents = 'none';
   }
 
-  // If on /t/index.html and no password is required, show unlock UI without password field
-  if (isNoPwPage && !requirePw) {
-    j0(false);
+  document.getElementById('usePassword').onchange = function() {
+    document.getElementById('pwField').style.display = this.checked ? '' : 'none';
+    if (!this.checked) {
+      document.getElementById('password').value = '.';
+      document.getElementById('password').setAttribute('readonly', 'readonly');
+    } else {
+      document.getElementById('password').value = '';
+      document.getElementById('password').removeAttribute('readonly');
+    }
+  };
+
+  document.getElementById('togglePw').onclick = function() {
+    const pwInput = document.getElementById('password');
+    if (pwInput.type === "password") {
+      pwInput.type = "text";
+      this.textContent = "Hide";
+    } else {
+      pwInput.type = "password";
+      this.textContent = "Show";
+    }
+    pwInput.focus();
+  };
+
+  document.getElementById('toggleUnlockPw').onclick = function() {
+    const pwInput = document.getElementById('unlockPassword');
+    if (pwInput.type === "password") {
+      pwInput.type = "text";
+      this.textContent = "Hide";
+    } else {
+      pwInput.type = "password";
+      this.textContent = "Show";
+    }
+    pwInput.focus();
+  };
+
+  const params = new URLSearchParams(window.location.search);
+  const id = params.get('id');
+  const isNoPwPage = window.location.pathname.endsWith('/t/index.html');
+
+  if (id) {
+    const { requirePw, encrypted } = l2(id);
+
+    // If on /t/index.html and a password is required, block access
+    if (isNoPwPage && requirePw) {
+      document.body.innerHTML = '<div style="margin:2em auto;max-width:400px;text-align:center;font-size:1.2em;color:#c00;">This link requires a password. Please use the main page.</div>';
+      return;
+    }
+
+    // If on /t/index.html and no password is required, show unlock UI without password field
+    if (isNoPwPage && !requirePw) {
+      j0(false);
+      document.getElementById('unlockBtn').onclick = async function() {
+        document.getElementById('unlockMsg').textContent = '';
+        // document.getElementById('revealedText').textContent = '';
+        if (revealedQuill) revealedQuill.setContents([{ insert: '\n' }]);
+        try {
+          // Try with "." as password
+          try {
+            const html = await h8(encrypted, '.');
+            if (revealedQuill) revealedQuill.root.innerHTML = html;
+            return;
+          } catch {}
+          // Try with empty string and random password (for compatibility)
+          try {
+            const html = await h8(encrypted, '');
+            if (revealedQuill) revealedQuill.root.innerHTML = html;
+            return;
+          } catch {}
+          try {
+            const html = await h8(encrypted, e5(new Uint8Array(16)));
+            if (revealedQuill) revealedQuill.root.innerHTML = html;
+            return;
+          } catch {}
+          document.getElementById('unlockMsg').textContent = 'Invalid link.';
+        } catch {
+          document.getElementById('unlockMsg').textContent = 'Invalid link.';
+        }
+      };
+      document.getElementById('pwUnlockField').style.display = 'none';
+      document.getElementById('unlockInfo').textContent = 'If the person told you there is no password, type "." as the password.';
+      document.getElementById('backBtn').onclick = function() {
+        window.location.href = window.location.pathname;
+      };
+      return;
+    }
+
+    // Main page logic (with or without password)
+    j0(requirePw);
     document.getElementById('unlockBtn').onclick = async function() {
+      let pw = requirePw ? (document.getElementById('unlockPassword').value || '') : '.';
       document.getElementById('unlockMsg').textContent = '';
-      document.getElementById('revealedText').textContent = '';
+      // document.getElementById('revealedText').textContent = '';
+      if (revealedQuill) revealedQuill.setContents([{ insert: '\n' }]);
       try {
-        // Try with empty string and random password (for compatibility)
-        try {
-          const text = await h8(encrypted, '');
-          document.getElementById('revealedText').textContent = text;
-          return;
-        } catch {}
-        try {
-          const text = await h8(encrypted, e5(new Uint8Array(16)));
-          document.getElementById('revealedText').textContent = text;
-          return;
-        } catch {}
-        document.getElementById('unlockMsg').textContent = 'Invalid link.';
-      } catch {
-        document.getElementById('unlockMsg').textContent = 'Invalid link.';
+        const html = await h8(encrypted, pw);
+        if (revealedQuill) revealedQuill.root.innerHTML = html;
+      } catch (e) {
+        if (!requirePw) {
+          try {
+            const html = await h8(encrypted, '.');
+            if (revealedQuill) revealedQuill.root.innerHTML = html;
+            return;
+          } catch {}
+          try {
+            const html = await h8(encrypted, '');
+            if (revealedQuill) revealedQuill.root.innerHTML = html;
+            return;
+          } catch {}
+          try {
+            const html = await h8(encrypted, e5(new Uint8Array(16)));
+            if (revealedQuill) revealedQuill.root.innerHTML = html;
+            return;
+          } catch {}
+        }
+        document.getElementById('unlockMsg').textContent = 'Incorrect password or invalid link.';
+        if (requirePw) document.getElementById('unlockPassword').focus();
       }
     };
-    document.getElementById('pwUnlockField').style.display = 'none';
+    document.getElementById('unlockPassword').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') document.getElementById('unlockBtn').click();
+    });
+    document.getElementById('pwUnlockField').style.display = requirePw ? '' : 'none';
+    if (!requirePw) {
+      document.getElementById('unlockInfo').textContent = 'If the person told you there is no password, type "." as the password.';
+    }
     document.getElementById('backBtn').onclick = function() {
       window.location.href = window.location.pathname;
     };
-    return;
-  }
-
-  // Main page logic (with or without password)
-  j0(requirePw);
-  document.getElementById('unlockBtn').onclick = async function() {
-    let pw = requirePw ? (document.getElementById('unlockPassword').value || '') : '';
-    document.getElementById('unlockMsg').textContent = '';
-    document.getElementById('revealedText').textContent = '';
-    try {
-      const text = await h8(encrypted, pw);
-      document.getElementById('unlockMsg').textContent = '';
-      document.getElementById('revealedText').textContent = text;
-    } catch (e) {
-      if (!requirePw) {
-        try {
-          const text = await h8(encrypted, '');
-          document.getElementById('unlockMsg').textContent = '';
-          document.getElementById('revealedText').textContent = text;
-          return;
-        } catch {}
-        try {
-          const text = await h8(encrypted, e5(new Uint8Array(16)));
-          document.getElementById('unlockMsg').textContent = '';
-          document.getElementById('revealedText').textContent = text;
-          return;
-        } catch {}
+  } else {
+    i9();
+    document.getElementById('generate').onclick = async function() {
+      // const text = document.getElementById('text').value.trim();
+      const html = quill.root.innerHTML.trim();
+      const usePw = document.getElementById('usePassword').checked;
+      let pw = usePw ? document.getElementById('password').value : '.';
+      // If editor is empty (only <p><br></p>), treat as empty
+      if (!html || html === '<p><br></p>') {
+        alert('Please enter some text.');
+        quill.focus();
+        return;
       }
-      document.getElementById('unlockMsg').textContent = 'Incorrect password or invalid link.';
-      if (requirePw) document.getElementById('unlockPassword').focus();
-    }
-  };
-  document.getElementById('unlockPassword').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') document.getElementById('unlockBtn').click();
-  });
-  document.getElementById('pwUnlockField').style.display = requirePw ? '' : 'none';
-  document.getElementById('backBtn').onclick = function() {
-    window.location.href = window.location.pathname;
-  };
-} else {
-  i9();
-  document.getElementById('generate').onclick = async function() {
-    const text = document.getElementById('text').value.trim();
-    const usePw = document.getElementById('usePassword').checked;
-    const pw = usePw ? document.getElementById('password').value : '';
-    if (!text) {
-      alert('Please enter some text.');
-      document.getElementById('text').focus();
-      return;
-    }
-    if (usePw && !pw) {
-      alert('Please enter a password.');
-      document.getElementById('password').focus();
-      return;
-    }
-    let password = pw;
-    if (!usePw) {
-      password = e5(window.crypto.getRandomValues(new Uint8Array(16)));
-    }
-    const encrypted = await g7(text, password);
-    const idParam = k1(encrypted, usePw);
-    const link = window.location.origin + window.location.pathname + '?id=' + encodeURIComponent(idParam);
-    const linkBox = document.getElementById('linkBox');
-    linkBox.innerHTML = `
-      <input id="secretLink" value="${link}" readonly style="width:100%;font-size:1em;margin-top:0.5em;" />
-      <button id="copyBtn" style="margin-top:0.5em;width:100%;">Copy Link</button>
-    `;
-    linkBox.classList.remove('hidden');
-    document.getElementById('secretLink').select();
-    document.getElementById('copyBtn').onclick = function() {
-      const input = document.getElementById('secretLink');
-      input.select();
-      document.execCommand('copy');
-      document.getElementById('copyBtn').textContent = 'Copied!';
-      setTimeout(() => { document.getElementById('copyBtn').textContent = 'Copy Link'; }, 1500);
+      if (usePw && !pw) {
+        alert('Please enter a password.');
+        document.getElementById('password').focus();
+        return;
+      }
+      let password = pw;
+      if (!usePw) {
+        password = '.';
+      }
+      const encrypted = await g7(html, password);
+      const idParam = k1(encrypted, usePw);
+      const link = window.location.origin + window.location.pathname + '?id=' + encodeURIComponent(idParam);
+      const linkBox = document.getElementById('linkBox');
+      linkBox.innerHTML = `
+        <input id="secretLink" value="${link}" readonly style="width:100%;font-size:1em;margin-top:0.5em;" />
+        <button id="copyBtn" style="margin-top:0.5em;width:100%;">Copy Link</button>
+      `;
+      linkBox.classList.remove('hidden');
+      document.getElementById('secretLink').select();
+      document.getElementById('copyBtn').onclick = function() {
+        const input = document.getElementById('secretLink');
+        input.select();
+        document.execCommand('copy');
+        document.getElementById('copyBtn').textContent = 'Copied!';
+        setTimeout(() => { document.getElementById('copyBtn').textContent = 'Copy Link'; }, 1500);
+      };
+      document.getElementById('infoMsg').classList.add('hidden');
     };
-    document.getElementById('infoMsg').classList.add('hidden');
-  };
-}
+  }
+});
 
 const m3 = "this is junk data";
 function n4() { return 1234567890; }
