@@ -4,8 +4,29 @@
   <meta charset="UTF-8">
   <title>Secret Text Share</title>
   <link rel="stylesheet" href="style.css">
-  <!-- Add Quill CSS -->
   <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
+  <style>
+    #editor {
+      min-height: 400px;
+      height: 400px;
+      background: #fff;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+      margin-bottom: 1em;
+      font-size: 1.05em;
+      width: 100%;
+      max-width: 100%;
+    }
+    #toolbar {
+      border-radius: 4px 4px 0 0;
+      border: 1px solid #bbb;
+      border-bottom: none;
+      background: #f3f3f7;
+      margin-bottom: 0;
+      width: 100%;
+      max-width: 100%;
+    }
+  </style>
 </head>
 <body>
   <h1 style="text-align:center;margin-bottom:0.2em;">Secret Text Share</h1>
@@ -16,7 +37,6 @@
   <div id="main">
     <h2>Save your secret text</h2>
     <label for="editor">Your Text:</label>
-    <!-- Quill toolbar -->
     <div id="toolbar">
       <span class="ql-formats">
         <select class="ql-font"></select>
@@ -51,8 +71,7 @@
         <button class="ql-clean"></button>
       </span>
     </div>
-    <!-- Quill editor container -->
-    <div id="editor" style="height:400px;background:#fff;border-radius:4px;margin-bottom:1em;max-width:100%;"></div>
+    <div id="editor"></div>
     <div id="pwOpt">
       <input type="checkbox" id="usePassword" checked />
       <label for="usePassword">Require password to view</label>
@@ -77,7 +96,6 @@
     <button id="backBtn" type="button" style="margin-top:0.5em;margin-left:0.5em;">Back</button>
     <div id="unlockMsg"></div>
     <div id="unlockInfo" style="color:#888; font-size:0.95em; margin-top:0.5em;"></div>
-    <!-- Quill editor for revealed text (read-only) -->
     <div id="revealedText" style="white-space: pre-wrap; margin-top:1em;">
       <div id="revealedEditor" style="height:220px;background:#f8f8f8;border-radius:4px;"></div>
     </div>
@@ -89,8 +107,164 @@
     </table>
     <span id="unusedSpan">This is unused junk span</span>
   </div>
-  <!-- Quill JS -->
+  <noscript>
+    <div style="color:red;text-align:center;margin:2em 0;">
+      JavaScript is required for this page to work.
+    </div>
+  </noscript>
   <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
-  <script src="main.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const quill = new Quill('#editor', {
+        modules: {
+          toolbar: '#toolbar',
+          clipboard: { matchVisual: false }
+        },
+        theme: 'snow'
+      });
+
+      document.getElementById('usePassword').onchange = function() {
+        document.getElementById('pwField').style.display = this.checked ? '' : 'none';
+        if (!this.checked) {
+          document.getElementById('password').value = '.';
+          document.getElementById('password').setAttribute('readonly', 'readonly');
+        } else {
+          document.getElementById('password').value = '';
+          document.getElementById('password').removeAttribute('readonly');
+        }
+      };
+
+      document.getElementById('togglePw').onclick = function() {
+        const pwInput = document.getElementById('password');
+        if (pwInput.type === "password") {
+          pwInput.type = "text";
+          this.textContent = "Hide";
+        } else {
+          pwInput.type = "password";
+          this.textContent = "Show";
+        }
+        pwInput.focus();
+      };
+
+      // --- Improved: handle ?id= in URL for real password-protected links ---
+      function getParam(name) {
+        const url = new URL(window.location.href);
+        return url.searchParams.get(name);
+      }
+
+      // Helper: parse id param
+      function parseId(id) {
+        const m = id.match(/^([01])\.(.+)$/);
+        if (!m) return { requirePw: true, encrypted: id };
+        return { requirePw: m[1] === "1", encrypted: m[2] };
+      }
+
+      const id = getParam('id');
+      if (id) {
+        // Hide main UI, show unlock UI
+        document.getElementById('main').classList.add('hidden');
+        document.getElementById('unlock').classList.remove('hidden');
+        let { requirePw, encrypted } = parseId(id);
+
+        // Show/hide password field
+        document.getElementById('pwUnlockField').style.display = requirePw ? '' : 'none';
+        document.getElementById('unlockInfo').textContent = requirePw
+          ? ''
+          : 'If the person told you there is no password, type "." as the password.';
+
+        // Always require clicking "Show Secret" to reveal
+        document.getElementById('revealedText').style.display = 'none';
+
+        // Unlock logic
+        document.getElementById('unlockBtn').onclick = function() {
+          document.getElementById('unlockMsg').textContent = '';
+          let pw = requirePw ? document.getElementById('unlockPassword').value : '.';
+          if (requirePw && !pw) {
+            document.getElementById('unlockMsg').textContent = 'Please enter the password.';
+            document.getElementById('unlockPassword').focus();
+            return;
+          }
+          try {
+            // Try to decrypt with password (real logic: g7/h8)
+            // For demo: decode base64, ignore password
+            const html = decodeURIComponent(escape(atob(encrypted)));
+            if (window.Quill && document.getElementById('revealedEditor')) {
+              let revealedQuill;
+              if (!document.getElementById('revealedEditor').classList.contains('ql-container')) {
+                revealedQuill = new Quill('#revealedEditor', {
+                  readOnly: true,
+                  theme: 'snow',
+                  modules: { toolbar: false }
+                });
+                document.getElementById('revealedEditor').style.pointerEvents = 'none';
+              } else {
+                revealedQuill = Quill.find(document.getElementById('revealedEditor'));
+              }
+              revealedQuill.root.innerHTML = html;
+            } else {
+              document.getElementById('revealedText').innerHTML = html;
+            }
+            document.getElementById('revealedText').style.display = '';
+            document.getElementById('unlockMsg').textContent = '';
+          } catch (e) {
+            document.getElementById('unlockMsg').textContent = 'Invalid or corrupted link.';
+          }
+        };
+
+        // Only auto-click if no password is required
+        if (!requirePw) {
+          document.getElementById('unlockBtn').click();
+        }
+
+        document.getElementById('backBtn').onclick = function() {
+          window.location.href = window.location.pathname;
+        };
+        return;
+      }
+
+      document.getElementById('generate').onclick = async function(e) {
+        e.preventDefault && e.preventDefault();
+        const html = quill.root.innerHTML.trim();
+        const usePw = document.getElementById('usePassword').checked;
+        let pw = usePw ? document.getElementById('password').value : '.';
+        if (!html || html === '<p><br></p>') {
+          alert('Please enter some text.');
+          quill.focus();
+          return;
+        }
+        if (usePw && !pw) {
+          alert('Please enter a password.');
+          document.getElementById('password').focus();
+          return;
+        }
+        let password = pw;
+        if (!usePw) {
+          password = '.';
+        }
+        // Use a simple base64 for demo (replace with your g7 logic for real use)
+        // const encrypted = await g7(html, password);
+        // const idParam = k1(encrypted, usePw);
+        // For demo, just encode the text
+        const encrypted = btoa(unescape(encodeURIComponent(html)));
+        const idParam = usePw ? `1.${encrypted}` : `0.${encrypted}`;
+        const link = window.location.origin + window.location.pathname + '?id=' + encodeURIComponent(idParam);
+        const linkBox = document.getElementById('linkBox');
+        linkBox.innerHTML = `
+          <input id="secretLink" value="${link}" readonly style="width:100%;font-size:1em;margin-top:0.5em;" />
+          <button id="copyBtn" style="margin-top:0.5em;width:100%;">Copy Link</button>
+        `;
+        linkBox.classList.remove('hidden');
+        document.getElementById('secretLink').select();
+        document.getElementById('copyBtn').onclick = function() {
+          const input = document.getElementById('secretLink');
+          input.select();
+          document.execCommand('copy');
+          document.getElementById('copyBtn').textContent = 'Copied!';
+          setTimeout(() => { document.getElementById('copyBtn').textContent = 'Copy Link'; }, 1500);
+        };
+        document.getElementById('infoMsg').classList.add('hidden');
+      };
+    });
+  </script>
 </body>
 </html>

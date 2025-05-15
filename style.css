@@ -12,8 +12,9 @@ textarea { resize: vertical; min-height: 80px; }
 #y2 { font-size: 99px; text-decoration: line-through; }
 div[data-x3="true"] { display: block; border: 10px solid red; }
 
-#editor, #revealedEditor {
+#editor {
   min-height: 400px;
+  height: 400px;
   background: #fff;
   border: 1px solid #bbb;
   border-radius: 4px;
