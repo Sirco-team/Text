@@ -159,23 +159,88 @@
         return { requirePw: m[1] === "1", encrypted: m[2] };
       }
 
+      // --- Add: simple password check for demo (store hash in URL) ---
+      function hashPw(pw) {
+        // Very basic hash for demo (not secure!)
+        let hash = 0;
+        for (let i = 0; i < pw.length; i++) {
+          hash = ((hash << 5) - hash) + pw.charCodeAt(i);
+          hash |= 0;
+        }
+        return hash.toString();
+      }
+
+      // Override generate button to store password hash in URL for demo
+      document.getElementById('generate').onclick = async function(e) {
+        e.preventDefault && e.preventDefault();
+        const html = quill.root.innerHTML.trim();
+        const usePw = document.getElementById('usePassword').checked;
+        let pw = usePw ? document.getElementById('password').value : '.';
+        if (!html || html === '<p><br></p>') {
+          alert('Please enter some text.');
+          quill.focus();
+          return;
+        }
+        if (usePw && !pw) {
+          alert('Please enter a password.');
+          document.getElementById('password').focus();
+          return;
+        }
+        let password = pw;
+        if (!usePw) {
+          password = '.';
+        }
+        // For demo: encode html and store hash if password is used
+        const encrypted = btoa(unescape(encodeURIComponent(html)));
+        let idParam;
+        if (usePw) {
+          idParam = `1.${encrypted}.${hashPw(password)}`;
+        } else {
+          idParam = `0.${encrypted}`;
+        }
+        const link = window.location.origin + window.location.pathname + '?id=' + encodeURIComponent(idParam);
+        const linkBox = document.getElementById('linkBox');
+        linkBox.innerHTML = `
+          <input id="secretLink" value="${link}" readonly style="width:100%;font-size:1em;margin-top:0.5em;" />
+          <button id="copyBtn" style="margin-top:0.5em;width:100%;">Copy Link</button>
+        `;
+        linkBox.classList.remove('hidden');
+        document.getElementById('secretLink').select();
+        document.getElementById('copyBtn').onclick = function() {
+          const input = document.getElementById('secretLink');
+          input.select();
+          document.execCommand('copy');
+          document.getElementById('copyBtn').textContent = 'Copied!';
+          setTimeout(() => { document.getElementById('copyBtn').textContent = 'Copy Link'; }, 1500);
+        };
+        document.getElementById('infoMsg').classList.add('hidden');
+      };
+
+      // --- Improved unlock logic: check password hash ---
       const id = getParam('id');
       if (id) {
         // Hide main UI, show unlock UI
         document.getElementById('main').classList.add('hidden');
         document.getElementById('unlock').classList.remove('hidden');
-        let { requirePw, encrypted } = parseId(id);
+        let requirePw, encrypted, pwHash;
+        const m = id.match(/^([01])\.([^\.]+)(?:\.([-\d]+))?$/);
+        if (m) {
+          requirePw = m[1] === "1";
+          encrypted = m[2];
+          pwHash = m[3] || null;
+        } else {
+          requirePw = true;
+          encrypted = id;
+          pwHash = null;
+        }
 
-        // Show/hide password field
         document.getElementById('pwUnlockField').style.display = requirePw ? '' : 'none';
         document.getElementById('unlockInfo').textContent = requirePw
           ? ''
           : 'If the person told you there is no password, type "." as the password.';
 
-        // Always require clicking "Show Secret" to reveal
         document.getElementById('revealedText').style.display = 'none';
 
-        // Unlock logic
         document.getElementById('unlockBtn').onclick = function() {
           document.getElementById('unlockMsg').textContent = '';
           let pw = requirePw ? document.getElementById('unlockPassword').value : '.';
@@ -184,9 +249,12 @@
             document.getElementById('unlockPassword').focus();
             return;
           }
+          // Check password hash if required
+          if (requirePw && hashPw(pw) !== pwHash) {
+            document.getElementById('unlockMsg').textContent = 'Incorrect password.';
+            return;
+          }
           try {
-            // Try to decrypt with password (real logic: g7/h8)
-            // For demo: decode base64, ignore password
             const html = decodeURIComponent(escape(atob(encrypted)));
             if (window.Quill && document.getElementById('revealedEditor')) {
               let revealedQuill;
@@ -221,49 +289,6 @@
         };
         return;
       }
-
-      document.getElementById('generate').onclick = async function(e) {
-        e.preventDefault && e.preventDefault();
-        const html = quill.root.innerHTML.trim();
-        const usePw = document.getElementById('usePassword').checked;
-        let pw = usePw ? document.getElementById('password').value : '.';
-        if (!html || html === '<p><br></p>') {
-          alert('Please enter some text.');
-          quill.focus();
-          return;
-        }
-        if (usePw && !pw) {
-          alert('Please enter a password.');
-          document.getElementById('password').focus();
-          return;
-        }
-        let password = pw;
-        if (!usePw) {
-          password = '.';
-        }
-        // Use a simple base64 for demo (replace with your g7 logic for real use)
-        // const encrypted = await g7(html, password);
-        // const idParam = k1(encrypted, usePw);
-        // For demo, just encode the text
-        const encrypted = btoa(unescape(encodeURIComponent(html)));
-        const idParam = usePw ? `1.${encrypted}` : `0.${encrypted}`;
-        const link = window.location.origin + window.location.pathname + '?id=' + encodeURIComponent(idParam);
-        const linkBox = document.getElementById('linkBox');
-        linkBox.innerHTML = `
-          <input id="secretLink" value="${link}" readonly style="width:100%;font-size:1em;margin-top:0.5em;" />
-          <button id="copyBtn" style="margin-top:0.5em;width:100%;">Copy Link</button>
-        `;
-        linkBox.classList.remove('hidden');
-        document.getElementById('secretLink').select();
-        document.getElementById('copyBtn').onclick = function() {
-          const input = document.getElementById('secretLink');
-          input.select();
-          document.execCommand('copy');
-          document.getElementById('copyBtn').textContent = 'Copied!';
-          setTimeout(() => { document.getElementById('copyBtn').textContent = 'Copy Link'; }, 1500);
-        };
-        document.getElementById('infoMsg').classList.add('hidden');
-      };
     });
   </script>
 </body>
