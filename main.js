@@ -120,7 +120,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!m) return { requirePw: true, encrypted: i };
     return { requirePw: m[1] === "1", encrypted: m[2] };
   }
-
   // Helper: decode base64 and set HTML in revealedQuill
   function showDecodedHtml(encoded) {
     try {
@@ -136,8 +135,30 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  // Helper: parse id param for password-protected links
+  function parseId(id) {
+    const m = id.match(/^([01])\.([^\.]+)(?:\.([-\d]+))?$/);
+    if (!m) return { requirePw: true, encrypted: id, pwHash: null };
+    return { requirePw: m[1] === "1", encrypted: m[2], pwHash: m[3] || null };
+  }
+
+  // Simple hash for password (for demo, not secure)
+  function hashPw(pw) {
+    let hash = 0;
+    for (let i = 0; i < pw.length; i++) {
+      hash = ((hash << 5) - hash) + pw.charCodeAt(i);
+      hash |= 0;
+    }
+    return hash.toString();
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const id = params.get('id');
+  const isNoPwPage = window.location.pathname.endsWith('/t/index.html');
+
   if (id) {
-    const { requirePw, encrypted } = l2(id);
+    // Use improved parseId logic
+    const { requirePw, encrypted, pwHash } = parseId(id);
 
     // If on /t/index.html and a password is required, block access
     if (isNoPwPage && requirePw) {
@@ -151,7 +172,13 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('unlockBtn').onclick = function() {
         document.getElementById('unlockMsg').textContent = '';
         if (revealedQuill) revealedQuill.setContents([{ insert: '\n' }]);
-        showDecodedHtml(encrypted);
+        // For demo: decode base64
+        try {
+          const html = decodeURIComponent(escape(atob(encrypted)));
+          revealedQuill.root.innerHTML = html;
+        } catch (e) {
+          document.getElementById('unlockMsg').textContent = 'Invalid or corrupted link.';
+        }
       };
       document.getElementById('pwUnlockField').style.display = 'none';
       document.getElementById('unlockInfo').textContent = 'If the person told you there is no password, type "." as the password.';
@@ -166,8 +193,22 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('unlockBtn').onclick = function() {
       document.getElementById('unlockMsg').textContent = '';
       if (revealedQuill) revealedQuill.setContents([{ insert: '\n' }]);
-      // For demo: always try to decode base64 (no password support)
-      showDecodedHtml(encrypted);
+      let pw = requirePw ? document.getElementById('unlockPassword').value : '.';
+      if (requirePw && !pw) {
+        document.getElementById('unlockMsg').textContent = 'Please enter the password.';
+        document.getElementById('unlockPassword').focus();
+        return;
+      }
+      if (requirePw && hashPw(pw) !== pwHash) {
+        document.getElementById('unlockMsg').textContent = 'Incorrect password.';
+        return;
+      }
+      try {
+        const html = decodeURIComponent(escape(atob(encrypted)));
+        revealedQuill.root.innerHTML = html;
+      } catch (e) {
+        document.getElementById('unlockMsg').textContent = 'Invalid or corrupted link.';
+      }
     };
     document.getElementById('unlockPassword').addEventListener('keydown', function(e) {
       if (e.key === 'Enter') document.getElementById('unlockBtn').click();
@@ -215,8 +256,13 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!usePw) {
         password = '.';
       }
-      const encrypted = await g7(html, password);
-      const idParam = k1(encrypted, usePw);
+      const encrypted = btoa(unescape(encodeURIComponent(html)));
+      let idParam;
+      if (usePw) {
+        idParam = `1.${encrypted}.${hashPw(password)}`;
+      } else {
+        idParam = `0.${encrypted}`;
+      }
       const link = window.location.origin + window.location.pathname + '?id=' + encodeURIComponent(idParam);
       const linkBox = document.getElementById('linkBox');
       linkBox.innerHTML = `
@@ -237,6 +283,192 @@ document.addEventListener('DOMContentLoaded', function() {
       alert('An error occurred while creating the link: ' + (err && err.message ? err.message : err));
     }
   };
+
+  // --- Edit button logic: always copy Delta, always keep text and formatting ---
+  document.getElementById('editBtn') && (document.getElementById('editBtn').onclick = function() {
+    document.getElementById('editArea').classList.remove('hidden');
+    document.getElementById('revealedText').style.display = 'none';
+    document.getElementById('editLinkBox').classList.add('hidden');
+
+    // Show a message to the user about copying and pasting
+    let msg = document.getElementById('editCopyMsg');
+    if (!msg) {
+      msg = document.createElement('div');
+      msg.id = 'editCopyMsg';
+      msg.style = 'margin-bottom:1em;color:#444;font-size:1.05em;';
+      msg.innerHTML = 'To edit: <b>Press the "Copy All" button below</b>, then click into the text box and <b>paste</b> (Ctrl+V or Cmd+V) to start editing.';
+      document.getElementById('editArea').insertBefore(msg, document.getElementById('editToolbar'));
+    } else {
+      msg.style.display = '';
+    }
+
+    // Add a "Copy All" button if not present
+    let copyAllBtn = document.getElementById('editCopyAllBtn');
+    if (!copyAllBtn) {
+      copyAllBtn = document.createElement('button');
+      copyAllBtn.id = 'editCopyAllBtn';
+      copyAllBtn.type = 'button';
+      copyAllBtn.style = 'margin-bottom:1em;';
+      copyAllBtn.textContent = 'Copy All';
+      document.getElementById('editArea').insertBefore(copyAllBtn, document.getElementById('editToolbar'));
+    } else {
+      copyAllBtn.style.display = '';
+    }
+
+    // Copy all content from revealed editor to clipboard when button is clicked
+    copyAllBtn.onclick = function() {
+      let revealedQuill = null;
+      if (window.Quill && document.getElementById('revealedEditor')) {
+        revealedQuill = Quill.find(document.getElementById('revealedEditor'));
+      }
+      let textToCopy = '';
+      if (revealedQuill) {
+        textToCopy = revealedQuill.root.innerHTML;
+      } else {
+        textToCopy = document.getElementById('revealedEditor').innerHTML;
+      }
+      // Use clipboard API if available, else fallback
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(textToCopy).then(function() {
+          copyAllBtn.textContent = 'Copied!';
+          setTimeout(() => { copyAllBtn.textContent = 'Copy All'; }, 1500);
+        });
+      } else {
+        // fallback for older browsers
+        const temp = document.createElement('textarea');
+        temp.value = textToCopy;
+        document.body.appendChild(temp);
+        temp.select();
+        document.execCommand('copy');
+        document.body.removeChild(temp);
+        copyAllBtn.textContent = 'Copied!';
+        setTimeout(() => { copyAllBtn.textContent = 'Copy All'; }, 1500);
+      }
+    };
+
+    // Setup edit Quill if not already
+    if (!window.editQuill) {
+      window.editQuill = new Quill('#editEditor', {
+        modules: {
+          toolbar: '#editToolbar',
+          clipboard: { matchVisual: false }
+        },
+        theme: 'snow'
+      });
+    }
+    // Clear the edit box for user to paste
+    window.editQuill.setContents([{ insert: '\n' }]);
+    setTimeout(() => { window.editQuill.focus(); }, 0);
+
+    // Set password UI to match original
+    const requirePw = document.getElementById('unlock').classList.contains('hidden');
+    document.getElementById('editPassword').value = '';
+    document.getElementById('editUsePassword').checked = true;
+    document.getElementById('editPwField').style.display = '';
+    document.getElementById('saveEditBtn').style.display = 'inline-block';
+    document.getElementById('editLinkBox').classList.add('hidden');
+    if (requirePw) {
+      document.getElementById('pwUnlockField').style.display = '';
+      setTimeout(() => { document.getElementById('editPassword').focus(); }, 100);
+    } else {
+      document.getElementById('pwUnlockField').style.display = 'none';
+    }
+  });
+
+  // --- Save Edit: scroll to bottom after showing link ---
+  document.getElementById('saveEditBtn') && (document.getElementById('saveEditBtn').onclick = function() {
+    const html = window.editQuill.root.innerHTML.trim();
+    const usePw = document.getElementById('editUsePassword').checked;
+    let pw = usePw ? document.getElementById('editPassword').value : '.';
+    if (!html || html === '<p><br></p>') {
+      alert('Please enter some text.');
+      window.editQuill.focus();
+      return;
+    }
+    if (usePw && !pw) {
+      alert('Please enter a password.');
+      document.getElementById('editPassword').focus();
+      return;
+    }
+    let password = pw;
+    if (!usePw) {
+      password = '.';
+    }
+    const encrypted = btoa(unescape(encodeURIComponent(html)));
+    let idParam;
+    if (usePw) {
+      idParam = `1.${encrypted}.${hashPw(password)}`;
+    } else {
+      idParam = `0.${encrypted}`;
+    }
+    const link = window.location.origin + window.location.pathname + '?id=' + encodeURIComponent(idParam);
+    const linkBox = document.getElementById('editLinkBox');
+    linkBox.innerHTML = `
+      <input id="editSecretLink" value="${link}" readonly style="width:100%;font-size:1em;margin-top:0.5em;" />
+      <button id="editCopyBtn" style="margin-top:0.5em;width:100%;">Copy Link</button>
+    `;
+    linkBox.classList.remove('hidden');
+    document.getElementById('editSecretLink').select();
+    document.getElementById('editCopyBtn').onclick = function() {
+      const input = document.getElementById('editSecretLink');
+      input.select();
+      document.execCommand('copy');
+      document.getElementById('editCopyBtn').textContent = 'Copied!';
+      setTimeout(() => { document.getElementById('editCopyBtn').textContent = 'Copy Link'; }, 1500);
+    };
+    // Scroll to the bottom of the page to show the link
+    setTimeout(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, 50);
+  });
+
+  // --- Generate: scroll to bottom after showing link ---
+  document.getElementById('generate').onclick = async function(e) {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    // ...existing code for validation and link creation...
+    const html = quill.root.innerHTML.trim();
+    const usePw = document.getElementById('usePassword').checked;
+    let pw = usePw ? document.getElementById('password').value : '.';
+    if (!html || html === '<p><br></p>') {
+      alert('Please enter some text.');
+      quill.focus();
+      return;
+    }
+    if (usePw && !pw) {
+      alert('Please enter a password.');
+      document.getElementById('password').focus();
+      return;
+    }
+    let password = pw;
+    if (!usePw) {
+      password = '.';
+    }
+    const encrypted = btoa(unescape(encodeURIComponent(html)));
+    let idParam;
+    if (usePw) {
+      idParam = `1.${encrypted}.${hashPw(password)}`;
+    } else {
+      idParam = `0.${encrypted}`;
+    }
+    const link = window.location.origin + window.location.pathname + '?id=' + encodeURIComponent(idParam);
+    const linkBox = document.getElementById('linkBox');
+    linkBox.innerHTML = `
+      <input id="secretLink" value="${link}" readonly style="width:100%;font-size:1em;margin-top:0.5em;" />
+      <button id="copyBtn" style="margin-top:0.5em;width:100%;">Copy Link</button>
+    `;
+    linkBox.classList.remove('hidden');
+    document.getElementById('secretLink').select();
+    document.getElementById('copyBtn').onclick = function() {
+      const input = document.getElementById('secretLink');
+      input.select();
+      document.execCommand('copy');
+      document.getElementById('copyBtn').textContent = 'Copied!';
+      setTimeout(() => { document.getElementById('copyBtn').textContent = 'Copy Link'; }, 1500);
+    };
+    document.getElementById('infoMsg').classList.add('hidden');
+    // Scroll to the bottom of the page to show the link
+    setTimeout(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, 50);
+  };
+
+  // ...existing code...
 });
 const m3 = "this is junk data";
 function n4() { return 1234567890; }

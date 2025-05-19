@@ -93,11 +93,70 @@
       <button type="button" id="toggleUnlockPw" style="position:absolute;right:0.5em;top:2.2em;padding:0 0.5em;">Show</button>
     </div>
     <button id="unlockBtn" style="margin-top:0.5em;">Show Secret</button>
+    <button id="editBtn" style="margin-top:0.5em;display:none;">Edit</button>
     <button id="backBtn" type="button" style="margin-top:0.5em;margin-left:0.5em;">Back</button>
     <div id="unlockMsg"></div>
     <div id="unlockInfo" style="color:#888; font-size:0.95em; margin-top:0.5em;"></div>
     <div id="revealedText" style="white-space: pre-wrap; margin-top:1em;">
       <div id="revealedEditor" style="height:220px;background:#f8f8f8;border-radius:4px;"></div>
+    </div>
+    <!-- Edit UI, hidden by default -->
+    <div id="editArea" class="hidden" style="margin-top:2em;">
+      <h2>Edit Secret</h2>
+      <!-- User instruction for editing -->
+      <div id="editCopyMsg" style="margin-bottom:1em;color:#444;font-size:1.05em;display:none;">
+        To edit: <b>Press the "Copy All" button below</b>, then click into the text box and <b>paste</b> (Ctrl+V or Cmd+V) to start editing.
+      </div>
+      <!-- Copy All button for user to copy message HTML -->
+      <button id="editCopyAllBtn" type="button" style="margin-bottom:1em;display:none;">Copy All</button>
+      <!-- Add full Quill toolbar for editing -->
+      <div id="editToolbar">
+        <span class="ql-formats">
+          <select class="ql-font"></select>
+          <select class="ql-size"></select>
+        </span>
+        <span class="ql-formats">
+          <button class="ql-bold"></button>
+          <button class="ql-italic"></button>
+          <button class="ql-underline"></button>
+          <button class="ql-strike"></button>
+        </span>
+        <span class="ql-formats">
+          <select class="ql-color"></select>
+          <select class="ql-background"></select>
+        </span>
+        <span class="ql-formats">
+          <button class="ql-blockquote"></button>
+          <button class="ql-code-block"></button>
+        </span>
+        <span class="ql-formats">
+          <button class="ql-list" value="ordered"></button>
+          <button class="ql-list" value="bullet"></button>
+          <button class="ql-indent" value="-1"></button>
+          <button class="ql-indent" value="+1"></button>
+        </span>
+        <span class="ql-formats">
+          <button class="ql-link"></button>
+          <button class="ql-image"></button>
+          <button class="ql-video"></button>
+        </span>
+        <span class="ql-formats">
+          <button class="ql-clean"></button>
+        </span>
+      </div>
+      <div id="editEditor" style="min-height:400px;height:400px;background:#fff;border:1px solid #bbb;border-radius:4px;margin-bottom:1em;font-size:1.05em;width:100%;max-width:100%;"></div>
+      <div id="editPwOpt" style="margin-top:1em;">
+        <input type="checkbox" id="editUsePassword" checked />
+        <label for="editUsePassword">Require password to view</label>
+      </div>
+      <div id="editPwField" style="position:relative;">
+        <label for="editPassword">Password:</label>
+        <input id="editPassword" type="password" placeholder="Choose a password" autocomplete="new-password" />
+        <button type="button" id="toggleEditPw" style="position:absolute;right:0.5em;top:2.2em;padding:0 0.5em;">Show</button>
+      </div>
+      <button id="saveEditBtn" style="margin-top:0.5em;">Save &amp; Get New Link</button>
+      <button id="cancelEditBtn" type="button" style="margin-top:0.5em;margin-left:0.5em;">Cancel</button>
+      <div id="editLinkBox" class="hidden" style="margin-top:1.5em;"></div>
     </div>
   </div>
   <div style="display:none">
@@ -152,16 +211,13 @@
         return url.searchParams.get(name);
       }
 
-      // Helper: parse id param
       function parseId(id) {
-        const m = id.match(/^([01])\.(.+)$/);
-        if (!m) return { requirePw: true, encrypted: id };
-        return { requirePw: m[1] === "1", encrypted: m[2] };
+        const m = id.match(/^([01])\.([^\.]+)(?:\.([-\d]+))?$/);
+        if (!m) return { requirePw: true, encrypted: id, pwHash: null };
+        return { requirePw: m[1] === "1", encrypted: m[2], pwHash: m[3] || null };
       }
 
-      // --- Add: simple password check for demo (store hash in URL) ---
       function hashPw(pw) {
-        // Very basic hash for demo (not secure!)
         let hash = 0;
         for (let i = 0; i < pw.length; i++) {
           hash = ((hash << 5) - hash) + pw.charCodeAt(i);
@@ -170,7 +226,209 @@
         return hash.toString();
       }
 
-      // Override generate button to store password hash in URL for demo
+      // --- Toggle unlock password visibility ---
+      document.getElementById('toggleUnlockPw').onclick = function() {
+        const pwInput = document.getElementById('unlockPassword');
+        if (pwInput.type === "password") {
+          pwInput.type = "text";
+          this.textContent = "Hide";
+        } else {
+          pwInput.type = "password";
+          this.textContent = "Show";
+        }
+        pwInput.focus();
+      };
+
+      // --- Edit password toggle ---
+      document.getElementById('toggleEditPw').onclick = function() {
+        const pwInput = document.getElementById('editPassword');
+        if (pwInput.type === "password") {
+          pwInput.type = "text";
+          this.textContent = "Hide";
+        } else {
+          pwInput.type = "password";
+          this.textContent = "Show";
+        }
+        pwInput.focus();
+      };
+
+      // --- Edit password checkbox logic ---
+      document.getElementById('editUsePassword').onchange = function() {
+        document.getElementById('editPwField').style.display = this.checked ? '' : 'none';
+        if (!this.checked) {
+          document.getElementById('editPassword').value = '.';
+          document.getElementById('editPassword').setAttribute('readonly', 'readonly');
+        } else {
+          document.getElementById('editPassword').value = '';
+          document.getElementById('editPassword').removeAttribute('readonly');
+        }
+      };
+
+      // --- Main unlock logic ---
+      const id = getParam('id');
+      if (id) {
+        document.getElementById('main').classList.add('hidden');
+        document.getElementById('unlock').classList.remove('hidden');
+        const { requirePw, encrypted, pwHash } = parseId(id);
+
+        document.getElementById('pwUnlockField').style.display = requirePw ? '' : 'none';
+        document.getElementById('unlockInfo').textContent = requirePw
+          ? ''
+          : 'If the person told you there is no password, type "." as the password.';
+
+        document.getElementById('revealedText').style.display = 'none';
+        document.getElementById('editBtn').style.display = 'none';
+        document.getElementById('editArea').classList.add('hidden');
+
+        // Unlock logic
+        document.getElementById('unlockBtn').onclick = function() {
+          document.getElementById('unlockMsg').textContent = '';
+          let pw = requirePw ? document.getElementById('unlockPassword').value : '.';
+          if (requirePw && !pw) {
+            document.getElementById('unlockMsg').textContent = 'Please enter the password.';
+            document.getElementById('unlockPassword').focus();
+            return;
+          }
+          if (requirePw && hashPw(pw) !== pwHash) {
+            document.getElementById('unlockMsg').textContent = 'Incorrect password.';
+            document.getElementById('editBtn').style.display = 'none';
+            document.getElementById('revealedText').style.display = 'none';
+            return;
+          }
+          try {
+            const html = decodeURIComponent(escape(atob(encrypted)));
+            if (window.Quill && document.getElementById('revealedEditor')) {
+              let revealedQuill;
+              if (!document.getElementById('revealedEditor').classList.contains('ql-container')) {
+                revealedQuill = new Quill('#revealedEditor', {
+                  readOnly: true,
+                  theme: 'snow',
+                  modules: { toolbar: false }
+                });
+                document.getElementById('revealedEditor').style.pointerEvents = 'none';
+              } else {
+                revealedQuill = Quill.find(document.getElementById('revealedEditor'));
+              }
+              revealedQuill.root.innerHTML = html;
+            } else {
+              document.getElementById('revealedText').innerHTML = html;
+            }
+            document.getElementById('revealedText').style.display = '';
+            document.getElementById('unlockMsg').textContent = '';
+            document.getElementById('editBtn').style.display = '';
+          } catch (e) {
+            document.getElementById('unlockMsg').textContent = 'Invalid or corrupted link.';
+            document.getElementById('editBtn').style.display = 'none';
+          }
+        };
+
+        document.getElementById('unlockPassword').addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') document.getElementById('unlockBtn').click();
+        });
+
+        // Only auto-click if no password is required
+        if (!requirePw) {
+          document.getElementById('unlockBtn').click();
+        }
+
+        document.getElementById('backBtn').onclick = function() {
+          window.location.href = window.location.pathname;
+        };
+
+        // --- Edit button logic ---
+        document.getElementById('editBtn').onclick = function() {
+          document.getElementById('editArea').classList.remove('hidden');
+          document.getElementById('revealedText').style.display = 'none';
+          document.getElementById('editLinkBox').classList.add('hidden');
+          // Show instruction and copy button
+          document.getElementById('editCopyMsg').style.display = '';
+          document.getElementById('editCopyAllBtn').style.display = '';
+          // Setup edit Quill with full toolbar/features
+          if (!window.editQuill) {
+            window.editQuill = new Quill('#editEditor', {
+              modules: {
+                toolbar: '#editToolbar',
+                clipboard: { matchVisual: false }
+              },
+              theme: 'snow'
+            });
+          }
+          // Always copy the current Delta from revealedQuill
+          let revealedQuill = Quill.find(document.getElementById('revealedEditor'));
+          if (revealedQuill) {
+            // Clear and set contents to keep all formatting and text
+            window.editQuill.setContents(revealedQuill.getContents());
+          } else {
+            // fallback: copy HTML if Delta not available
+            let revealedHtml = document.getElementById('revealedEditor').innerHTML;
+            window.editQuill.root.innerHTML = revealedHtml;
+          }
+          // Set password UI to match original
+          if (requirePw) {
+            document.getElementById('editUsePassword').checked = true;
+            document.getElementById('editPwField').style.display = '';
+            document.getElementById('editPassword').value = '';
+            document.getElementById('editPassword').removeAttribute('readonly');
+          } else {
+            document.getElementById('editUsePassword').checked = false;
+            document.getElementById('editPwField').style.display = 'none';
+            document.getElementById('editPassword').value = '.';
+            document.getElementById('editPassword').setAttribute('readonly', 'readonly');
+          }
+        };
+
+        document.getElementById('cancelEditBtn').onclick = function() {
+          document.getElementById('editArea').classList.add('hidden');
+          document.getElementById('revealedText').style.display = '';
+        };
+
+        document.getElementById('saveEditBtn').onclick = function() {
+          const html = window.editQuill.root.innerHTML.trim();
+          const usePw = document.getElementById('editUsePassword').checked;
+          let pw = usePw ? document.getElementById('editPassword').value : '.';
+          if (!html || html === '<p><br></p>') {
+            alert('Please enter some text.');
+            window.editQuill.focus();
+            return;
+          }
+          if (usePw && !pw) {
+            alert('Please enter a password.');
+            document.getElementById('editPassword').focus();
+            return;
+          }
+          let password = pw;
+          if (!usePw) {
+            password = '.';
+          }
+          const encrypted = btoa(unescape(encodeURIComponent(html)));
+          let idParam;
+          if (usePw) {
+            idParam = `1.${encrypted}.${hashPw(password)}`;
+          } else {
+            idParam = `0.${encrypted}`;
+          }
+          const link = window.location.origin + window.location.pathname + '?id=' + encodeURIComponent(idParam);
+          const linkBox = document.getElementById('editLinkBox');
+          linkBox.innerHTML = `
+            <input id="editSecretLink" value="${link}" readonly style="width:100%;font-size:1em;margin-top:0.5em;" />
+            <button id="editCopyBtn" style="margin-top:0.5em;width:100%;">Copy Link</button>
+          `;
+          linkBox.classList.remove('hidden');
+          document.getElementById('editSecretLink').select();
+          document.getElementById('editCopyBtn').onclick = function() {
+            const input = document.getElementById('editSecretLink');
+            input.select();
+            document.execCommand('copy');
+            document.getElementById('editCopyBtn').textContent = 'Copied!';
+            setTimeout(() => { document.getElementById('editCopyBtn').textContent = 'Copy Link'; }, 1500);
+          };
+          // Scroll to the bottom of the page to show the link
+          setTimeout(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, 50);
+        };
+        return;
+      }
+
+      // --- Improved: generate logic with real password protection ---
       document.getElementById('generate').onclick = async function(e) {
         e.preventDefault && e.preventDefault();
         const html = quill.root.innerHTML.trim();
@@ -214,81 +472,9 @@
           setTimeout(() => { document.getElementById('copyBtn').textContent = 'Copy Link'; }, 1500);
         };
         document.getElementById('infoMsg').classList.add('hidden');
+        // Scroll to the bottom of the page to show the link
+        setTimeout(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, 50);
       };
-
-      // --- Improved unlock logic: check password hash ---
-      const id = getParam('id');
-      if (id) {
-        // Hide main UI, show unlock UI
-        document.getElementById('main').classList.add('hidden');
-        document.getElementById('unlock').classList.remove('hidden');
-        let requirePw, encrypted, pwHash;
-        const m = id.match(/^([01])\.([^\.]+)(?:\.([-\d]+))?$/);
-        if (m) {
-          requirePw = m[1] === "1";
-          encrypted = m[2];
-          pwHash = m[3] || null;
-        } else {
-          requirePw = true;
-          encrypted = id;
-          pwHash = null;
-        }
-
-        document.getElementById('pwUnlockField').style.display = requirePw ? '' : 'none';
-        document.getElementById('unlockInfo').textContent = requirePw
-          ? ''
-          : 'If the person told you there is no password, type "." as the password.';
-
-        document.getElementById('revealedText').style.display = 'none';
-
-        document.getElementById('unlockBtn').onclick = function() {
-          document.getElementById('unlockMsg').textContent = '';
-          let pw = requirePw ? document.getElementById('unlockPassword').value : '.';
-          if (requirePw && !pw) {
-            document.getElementById('unlockMsg').textContent = 'Please enter the password.';
-            document.getElementById('unlockPassword').focus();
-            return;
-          }
-          // Check password hash if required
-          if (requirePw && hashPw(pw) !== pwHash) {
-            document.getElementById('unlockMsg').textContent = 'Incorrect password.';
-            return;
-          }
-          try {
-            const html = decodeURIComponent(escape(atob(encrypted)));
-            if (window.Quill && document.getElementById('revealedEditor')) {
-              let revealedQuill;
-              if (!document.getElementById('revealedEditor').classList.contains('ql-container')) {
-                revealedQuill = new Quill('#revealedEditor', {
-                  readOnly: true,
-                  theme: 'snow',
-                  modules: { toolbar: false }
-                });
-                document.getElementById('revealedEditor').style.pointerEvents = 'none';
-              } else {
-                revealedQuill = Quill.find(document.getElementById('revealedEditor'));
-              }
-              revealedQuill.root.innerHTML = html;
-            } else {
-              document.getElementById('revealedText').innerHTML = html;
-            }
-            document.getElementById('revealedText').style.display = '';
-            document.getElementById('unlockMsg').textContent = '';
-          } catch (e) {
-            document.getElementById('unlockMsg').textContent = 'Invalid or corrupted link.';
-          }
-        };
-
-        // Only auto-click if no password is required
-        if (!requirePw) {
-          document.getElementById('unlockBtn').click();
-        }
-
-        document.getElementById('backBtn').onclick = function() {
-          window.location.href = window.location.pathname;
-        };
-        return;
-      }
     });
   </script>
 </body>
